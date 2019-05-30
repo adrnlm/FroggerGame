@@ -1,7 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <math.h>
 #include <stdbool.h>
+
+/* For VS2017 only */
+#define _USE_MATH_DEFINES
+#include <stdbool.h>
+
+#include <math.h>
 
 #if _WIN32
 #   include <Windows.h>
@@ -73,24 +78,12 @@ typedef struct {
 } log_val;
 
 typedef struct {
-  // CAMERA ROTATION
-  float rotY;
-  float rotX;
-  float lastX;
-  float lastY;
-  // MOUSE FUNCTIONS
-  bool lmd;
-  bool rmd;
   // RENDER FUNCTIONS
   bool lighting;
   bool filled;
   bool axes;
   bool normals;
   bool go;
-  // CAMERA
-  float camera_x;
-  float camera_z;
-  float zoom;
   // VARIABLES
   float time;
   int tess;
@@ -101,23 +94,42 @@ typedef struct {
   int nLogs;
 } global_val;
 
-
 global_val global = {
-  // CAMERA ROTATION
-  0.0, 0.0, 0.0, 0.0,
-  // MOUSE FUNCTIONS
-  false, false,
-  // KEYBOARD VARIABLES
-  false, false, true, true, false,
-  // CAMERA
-  0.0, 0.0, 5,
-  // VARIABLES
-  0.0,
-  8,
-  10, 2,
-  0.5,
-  16,
-  2
+	// RENDER FUNCTIONS
+	false, false, true, true, false,
+	// VARIABLES
+	0.0,
+	8,
+	10, 2,
+	0.5,
+	16,
+	2
+};
+
+typedef struct {
+	// CAMERA ROTATION
+	int rotationX, rotationY, lastX, lastY;
+	// CAMERA
+	float offsetX, offsetZ;
+	float zoom;
+	float aspectRatio;
+	float sensitivity;
+	// MOUSE FUNCTIONS
+	boolean LMB;
+	boolean RMB;
+}Camera;
+
+Camera c = {
+	// CAMERA ROTATION
+	0,75,0,0,
+	// CAMERA
+	0.0,-20.0,
+	0.0,
+	0.0,
+	0.4,
+	// MOUSE FUNCTIONS
+	false,
+	false
 };
 
 Sinewave sw = { 0.2, (2*M_PI)/2.0, 2.0 };
@@ -683,35 +695,39 @@ void idle(){
 
 // +++++++++++++++++++++++++++ MOUSE FUNCTION ++++++++++++++++++++++++++++++++
 void mouse(int button, int state, int x, int y){
-  global.lastX = x;
-  global.lastY = y;
-  if (button == GLUT_LEFT_BUTTON)
-    global.lmd = (state == GLUT_DOWN);
-  if (button == GLUT_RIGHT_BUTTON)
-    global.rmd = (state == GLUT_DOWN);
 
-  if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
-  {
-    printf("Left Mouse Button\n" );
-  }
-  else if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
-  {
-    printf("Right Mouse Button\n" );
-  }
+	c.LMB = c.RMB = false;
+
+	if (state == GLUT_DOWN) {
+		c.lastX = x;
+		c.lastY = y;
+
+		if (button == GLUT_LEFT_BUTTON) {
+			c.LMB = true;
+		}
+
+		if (button == GLUT_RIGHT_BUTTON) {
+			c.RMB = true;
+		}
+	}
 
 }
 
 void mouseMotion(int x, int y){
-  if (global.lmd){
-    global.rotY += x - global.lastX;
-    global.rotX += y - global.lastY;
-  }
-  if (global.rmd){
-    global.zoom += (y - global.lastY)/100;
-  }
-  global.lastX = x;
-  global.lastY = y;
 
+	if (c.LMB) {
+		c.rotationX += (x - c.lastX);
+		c.rotationY += (y - c.lastY);
+	}
+
+	if (c.RMB) {
+		c.zoom += (c.lastY - y) / 100.0;
+	}
+
+	c.lastX = x;
+	c.lastY = y;
+
+	//printf("X Rotation : %d, Y Rotation : %d\n", c.rotationX, c.rotationY);
 }
 
 // +++++++++++++++++++++++++++ DISPLAY ++++++++++++++++++++++++++++++++
@@ -765,15 +781,11 @@ void display(){
 
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
-  gluPerspective(75, 1, 0.01, 100);
-
+  gluPerspective(75, c.aspectRatio, 0.01, 100);
+  glTranslatef(c.offsetX, 0, c.zoom + c.offsetZ);
+  glRotatef(c.rotationY*c.sensitivity, 1.0, 0, 0);
+  glRotatef(c.rotationX*c.sensitivity, 0, 1.0, 0);
   glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
-  glTranslatef(0, 0, -global.zoom); // CAMERA
-  glRotatef(global.rotY, 0, 1, 0);
-  glRotatef(global.rotX, 1, 0, 0);
-  // glTranslatef(-INITIAL_COORD_X + global.camera_x, -INITIAL_COORD_Y, INITIAL_COORD_Z+global.camera_z);
-  glTranslatef(global.camera_x, 0, global.camera_z);
 
   drawAxes(5);
 
@@ -830,6 +842,23 @@ void display(){
   glutSwapBuffers();
 }
 
+void reshape(int width, int height) {
+	printf("Window width : %d, Window height : %d\n", width, height);
+
+	glViewport(0, 0, width, height);
+
+	c.aspectRatio = ((float)width / (float)height);
+
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	gluPerspective(75, c.aspectRatio, 0.01, 100);
+	glTranslatef(0, 0, c.zoom - 3.0);
+	glRotatef(c.rotationX, 0, 1.0, 0);
+	glRotatef(c.rotationY, 1.0, 0, 0);
+	glMatrixMode(GL_MODELVIEW);
+
+}
+
 // +++++++++++++++++++++++++++ KEYBOARD FUNCTION ++++++++++++++++++++++++++++++
 
 void SpecialInput(int key, int x, int y){
@@ -841,7 +870,7 @@ void SpecialInput(int key, int x, int y){
 
       // if(row < 10)
       //   row += 1;
-      global.camera_z += .2;
+      c.offsetZ += .2;
       break;
     case GLUT_KEY_DOWN:
       //do something here
@@ -849,7 +878,7 @@ void SpecialInput(int key, int x, int y){
 
       // if(row > 1)
       //   row -= 1;
-      global.camera_z -= .2;
+	  c.offsetZ -= .2;
       break;
     case GLUT_KEY_LEFT:
       //do something here
@@ -857,7 +886,7 @@ void SpecialInput(int key, int x, int y){
 
       // if(column > 1)
       //   column -= 1;
-      global.camera_x += .2;
+      c.offsetX += .2;
       break;
     case GLUT_KEY_RIGHT:
       //do something here
@@ -865,7 +894,7 @@ void SpecialInput(int key, int x, int y){
 
       // if(column < 10)
       //   column += 1;
-      global.camera_x -= .2;
+	  c.offsetX -= .2;
       break;
   }
   glutPostRedisplay();
@@ -886,11 +915,16 @@ void keyboard(unsigned char key, int x, int y){
     printf("key: l\n");
     global.lighting = !global.lighting;
     break;
+  case '+':
+	  printf("key: -\n");
+	  if (global.tess <= 32 )
+		  global.tess *= 2;
+	  break;
   case '-':
-    printf("key: -\n");
-      if(global.tess > 4)
-        global.tess = global.tess/2;
-    break;
+	  printf("key: -\n");
+	  if (global.tess > 4)
+		  global.tess /= 2;
+	  break;
   case '=':
     printf("key: +\n");
       if(global.tess < 32)
@@ -933,6 +967,7 @@ int main(int argc, char **argv){
   glutKeyboardFunc(keyboard);
   glutMouseFunc(mouse);
   glutMotionFunc(mouseMotion);
+  glutReshapeFunc(reshape);
   glutMainLoop();
 
   return EXIT_SUCCESS;
