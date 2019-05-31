@@ -38,6 +38,8 @@
 typedef struct { float A; float k; float w; } Sinewave;
 typedef struct {float x, y, z;} vec3f;
 typedef struct {float x, y, z, row, column;} land_v;
+typedef struct { vec3f r0, v0, v; } state;
+typedef struct { float speed, angle, rotation; } vec3fPolar;
 
 typedef struct {
   vec3f currentCoord;
@@ -48,9 +50,27 @@ typedef struct {
 
 typedef struct {
   vec3f currentCoord;
-  vec3f nextCoord;
-  float rotation;
-} frog_val;
+  state projectile;
+  vec3fPolar polar;
+  bool jumping;
+  bool onLog;
+  float logOffset;
+  float currentAngle;
+  bool dead;
+  float deadTime;
+} Frog;
+
+Frog frog = {
+  {INITIAL_COORD_X, INITIAL_COORD_Y, INITIAL_COORD_Y},
+  {{ 0.0, 0.0, 0.0},{ 0.0, 0.0, 0.0},{ 0.0, 0.0, 0.0}},
+  {0.75, 45, 180},
+  false,
+  false,
+  0.0,
+  45.0,
+  false,
+  0.0
+};
 
 typedef struct {
   land_v beforeWater;
@@ -92,6 +112,12 @@ typedef struct {
   float scale;
   int nCars;
   int nLogs;
+  float pauseT;
+  bool paused;
+  int frames;
+  float frameRate;
+  float frameRateInterval;
+  float lastFrameRateT;
 } global_val;
 
 global_val global = {
@@ -103,7 +129,13 @@ global_val global = {
 	10, 2,
 	0.5,
 	16,
-	2
+	2,
+	0.0,
+	false,
+	0,
+	0.0,
+	0.2,
+	0.0
 };
 
 typedef struct {
@@ -175,13 +207,6 @@ log_val logs[] = {
   {{-2, -0.25, 2}, LOG_RADIUS, LOG_LENGTH},
   {{-4, -0.25, -2}, LOG_RADIUS, LOG_LENGTH}
 };
-
-frog_val frog = {
-  {INITIAL_COORD_X, INITIAL_COORD_Y, INITIAL_COORD_Y},
-  {0, 0, 0},
-  0
-};
-
 
 // +++++++++++++++++++++++++++ DRAW FUNCTION ++++++++++++++++++++++++++++++
 
@@ -282,7 +307,94 @@ void drawNormal(float x, float y, float z,
   }
 }
 
-void drawEllipsoid(frog_val frog){
+void drawTrajectoryNumerical() {
+	glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
+	glLineWidth(2.5);
+	glBegin(GL_LINE_STRIP);
+	glColor3f(1, 1, 1);
+	glVertex3f(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z);
+
+	float dt = 10.0 / MILLI;
+
+	frog.projectile.r0.x = frog.currentCoord.x;
+	frog.projectile.r0.y = frog.currentCoord.y;
+	frog.projectile.r0.z = frog.currentCoord.z;
+
+	while (true) {
+
+		frog.projectile.r0.x += frog.projectile.v0.x * dt;
+		frog.projectile.r0.y += frog.projectile.v0.y * dt;
+		frog.projectile.r0.z += frog.projectile.v0.z * dt;
+
+		frog.projectile.v0.y += GRAVITY * dt;
+
+		/*if (groundCollision(frog.projectile.r0.x, frog.projectile.r0.y) != -1.0) {
+			break;
+		}*/
+
+		if (frog.projectile.r0.y <= 0) {
+			break;
+		}
+
+		glVertex3f(frog.projectile.r0.x, frog.projectile.r0.y, frog.projectile.r0.z);
+	}
+	glEnd();
+	glPopAttrib();
+}
+
+void drawVector(float scale) {
+	glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
+	glLineWidth(2.5);
+	glBegin(GL_LINES);
+	glColor3f(1, 1, 1);
+	glVertex3f(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z);
+	float x, y, z;
+
+	/* Get the real-time magnitute and angle when jumping */
+	if (frog.jumping) {
+
+		float mx = frog.projectile.v.x;
+		float my = frog.projectile.v.y;
+		float mz = frog.projectile.v.z;
+		float mxz = fabsf(mx) + fabsf(mz);
+		float angle = atan(my / mxz);
+		float rotation = frog.polar.rotation * DEG2RAD;
+
+		frog.currentAngle = angle * 180 / M_PI;
+
+		float magnitute = sqrtf(mxz * mxz + my * my);
+
+		//printf("mx: %f, my: %f, mz: %f mxz: %f cos(rotation): %f sin(rotation): %f angle: %f\n", mx,my,mz, mxz,cos(rotation) ,sin(rotation), frog.currentAngle);
+
+		x = magnitute * cos(angle) * cos(rotation);
+		y = magnitute * sin(angle);
+		z = -magnitute * cos(angle) * sin(rotation);
+
+	}
+	else {
+		float angle = frog.polar.angle * DEG2RAD;
+		float rotation = -frog.polar.rotation * DEG2RAD;
+		x = frog.polar.speed * cos(angle) * cos(rotation);
+		y = frog.polar.speed * sin(angle);
+		z = frog.polar.speed * cos(angle) * sin(rotation);
+	}
+
+	frog.projectile.v0.x = x;
+	frog.projectile.v0.y = y;
+	frog.projectile.v0.z = z;
+
+	//printf("X speed: %f, Y speed: %f, Z speed: %f Rotation: %f\n", x,y,z,frog.polar.rotation);
+
+	x *= scale;
+	y *= scale;
+	z *= scale;
+
+	glVertex3f(frog.currentCoord.x + x, frog.currentCoord.y + y, frog.currentCoord.z + z);
+	glEnd();
+	glPopAttrib();
+}
+
+void drawFrog(Frog frog){
 
   float ix = frog.currentCoord.x;
   float iy = frog.currentCoord.y;
@@ -299,9 +411,9 @@ void drawEllipsoid(frog_val frog){
 
   glPushMatrix();
     glTranslatef(ix,iy,iz);
-    glRotatef(180,0,1,0);
-    glRotatef(frog.rotation,0,1,0);
+    glRotatef(frog.polar.rotation,0,1,0);
     drawAxes(0.5);
+	glRotatef(frog.currentAngle, 0, 0, 1);
 
     if (global.filled){
       glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -317,6 +429,7 @@ void drawEllipsoid(frog_val frog){
       glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, color);
       glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shiny);
       glColor3f(1, 0, 1); // RED
+
       glBegin(GL_TRIANGLE_STRIP);
 
         float tStep = (M_PI) / (float)uiSlices;
@@ -340,6 +453,8 @@ void drawEllipsoid(frog_val frog){
       glEnd();
     glPopAttrib();
   glPopMatrix();
+  drawVector(2);
+  drawTrajectoryNumerical();
 }
 
 void drawGrid(land_v grid){
@@ -670,27 +785,48 @@ void drawLogs(){
 // +++++++++++++++++++++++++++ IDLE FUNCTION ++++++++++++++++++++++++++++++++
 
 void idle(){
-  static float lastT = -1.0;
-  float t, dt;
+	float t, dt;
+	static float tLast = 0.0;
 
-  t = glutGet(GLUT_ELAPSED_TIME) / (float)MILLI;
+	t = glutGet(GLUT_ELAPSED_TIME);
+	t /= MILLI;
 
-  if (lastT < 0.0){
-    lastT = t;
-    return;
-  }
+	if (global.paused) {
+		global.pauseT = t - global.time;
+		global.lastFrameRateT = tLast = t;
+		return;
+	}
 
-  dt = t - lastT;
-  lastT = t;
+	dt = t - tLast;
 
-  if(dt<=0){
-    return;
+	if (frog.jumping) {
+
+		frog.currentCoord.x += frog.projectile.v.x * dt;
+		frog.currentCoord.y += frog.projectile.v.y * dt;
+		frog.currentCoord.z += frog.projectile.v.z * dt;
+
+		/* Velocity */
+		frog.projectile.v.y += GRAVITY * dt;
+
+		if (frog.currentCoord.y <= 0) {
+			frog.currentAngle = frog.polar.angle;
+			frog.jumping = false;
+		}
+	}
+
+
+  tLast = t;
+  global.time = t - global.pauseT;
+
+  /* Frame rate */
+  dt = t - global.lastFrameRateT;
+  if (dt > global.frameRateInterval) {
+	  global.frameRate = global.frames / dt;
+	  global.lastFrameRateT = t;
+	  global.frames = 0;
   }
 
   glutPostRedisplay();
-
-  global.time = t;
-
 }
 
 // +++++++++++++++++++++++++++ MOUSE FUNCTION ++++++++++++++++++++++++++++++++
@@ -785,6 +921,7 @@ void display(){
   glTranslatef(c.offsetX, 0, c.zoom + c.offsetZ);
   glRotatef(c.rotationY*c.sensitivity, 1.0, 0, 0);
   glRotatef(c.rotationX*c.sensitivity, 0, 1.0, 0);
+  glTranslatef(-frog.currentCoord.x, -frog.currentCoord.y, -frog.currentCoord.z);
   glMatrixMode(GL_MODELVIEW);
 
   drawAxes(5);
@@ -824,7 +961,7 @@ void display(){
   // FROG
   glPushMatrix();
     glTranslatef(0.0, 0.1, 0.0);
-    drawEllipsoid(frog);
+    drawFrog(frog);
   glPopMatrix();
 
   // CARS
@@ -833,7 +970,6 @@ void display(){
   // LOGS
   drawLogs();
 
-  glutPostRedisplay();
   /* Always check for errors! */
   int err;
   while ((err = glGetError()) != GL_NO_ERROR)
@@ -862,84 +998,85 @@ void reshape(int width, int height) {
 // +++++++++++++++++++++++++++ KEYBOARD FUNCTION ++++++++++++++++++++++++++++++
 
 void SpecialInput(int key, int x, int y){
-  switch(key)
-  {
-    case GLUT_KEY_UP:
-      //do something here
-      printf("UP\n");
-
-      // if(row < 10)
-      //   row += 1;
-      c.offsetZ += .2;
-      break;
-    case GLUT_KEY_DOWN:
-      //do something here
-      printf("DOWN\n");
-
-      // if(row > 1)
-      //   row -= 1;
-	  c.offsetZ -= .2;
-      break;
-    case GLUT_KEY_LEFT:
-      //do something here
-      printf("LEFT\n");
-
-      // if(column > 1)
-      //   column -= 1;
-      c.offsetX += .2;
-      break;
-    case GLUT_KEY_RIGHT:
-      //do something here
-      printf("RIGHT\n");
-
-      // if(column < 10)
-      //   column += 1;
-	  c.offsetX -= .2;
-      break;
-  }
-  glutPostRedisplay();
+	switch (key)
+	{
+	case GLUT_KEY_UP:
+		if (frog.polar.speed < 0.75)
+			frog.polar.speed += 0.03;
+		break;
+	case GLUT_KEY_DOWN:
+		if (frog.polar.speed > 0.1)
+			frog.polar.speed -= 0.03;
+		break;
+	case GLUT_KEY_LEFT:
+		if (frog.polar.angle < 90)
+			frog.polar.angle++;
+		if (!frog.jumping && !frog.dead)
+			frog.currentAngle = frog.polar.angle;
+		break;
+	case GLUT_KEY_RIGHT:
+		if (frog.polar.angle > 0)
+			frog.polar.angle--;
+		if (!frog.jumping && !frog.dead)
+			frog.currentAngle = frog.polar.angle;
+		break;
+	default:
+		break;
+	}
 }
 
 void keyboard(unsigned char key, int x, int y){
   switch (key)
   {
   case 'a':
-    printf("key: a\n");
-    frog.rotation += 5;
+	if (!frog.jumping && !frog.dead)
+    frog.polar.rotation += 5;
     break;
   case 'd':
-    printf("key: d\n");
-    frog.rotation -= 5;
+	if (!frog.jumping && !frog.dead)
+	frog.polar.rotation -= 5;
     break;
   case 'l':
-    printf("key: l\n");
     global.lighting = !global.lighting;
     break;
   case '+':
-	  printf("key: -\n");
 	  if (global.tess <= 32 )
 		  global.tess *= 2;
 	  break;
   case '-':
-	  printf("key: -\n");
 	  if (global.tess > 4)
 		  global.tess /= 2;
 	  break;
   case '=':
-    printf("key: +\n");
       if(global.tess < 32)
         global.tess = global.tess*2;
     break;
+  case ' ':
+	  if (!frog.jumping && !frog.dead) {
+		  float angle = frog.polar.angle * DEG2RAD;
+		  float rotation = frog.polar.rotation * DEG2RAD;
+
+		  frog.projectile.v.x = frog.polar.speed * cos(angle) * cos(rotation);
+		  frog.projectile.v.y = frog.polar.speed * sin(angle);
+		  frog.projectile.v.z = -frog.polar.speed * cos(angle) * sin(rotation);
+		  frog.logOffset = 0.0;
+		  frog.onLog = false;
+		  frog.jumping = true;
+	  }
+	  break;
+  case 'g':
+	  if (!global.paused)
+		  global.paused = true;
+	  else
+		  global.paused = false;
+	  break;
   case 'm':
-    printf("key: m\n");
     global.filled = !global.filled;
     break;
   case 'n':
-    printf("key: n\n");
     global.normals = !global.normals;
     break;
   case 'x':
-    printf("key: x\n");
     global.axes = !global.axes;
     break;
   case 'q':
