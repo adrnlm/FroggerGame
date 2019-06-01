@@ -794,6 +794,7 @@ void idle(){
 	if (global.paused) {
 		global.pauseT = t - global.time;
 		global.lastFrameRateT = tLast = t;
+		glutPostRedisplay();
 		return;
 	}
 
@@ -809,7 +810,10 @@ void idle(){
 		frog.projectile.v.y += GRAVITY * dt;
 
 		if (frog.currentCoord.y <= 0) {
-			frog.currentAngle = frog.polar.angle;
+
+			if(!frog.dead)
+				frog.currentAngle = frog.polar.angle;
+
 			frog.jumping = false;
 		}
 	}
