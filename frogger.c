@@ -48,6 +48,25 @@ typedef struct {
   float width;
 } car_val;
 
+car_val cars[] = {
+  {{CAR_LANE_1, 0.45, -9}, 0.5, 0.4, 0.7}, // Car 1
+  {{CAR_LANE_1, 0.45, -6}, 0.5, 0.4, 0.7}, // Car 2
+  {{CAR_LANE_1, 0.45, 3}, 0.5, 0.4, 0.7}, // Car 3
+  {{CAR_LANE_1, 0.45, 7}, 0.5, 0.4, 0.7}, // Car 4
+  {{CAR_LANE_2, 0.45, -8}, 0.5, 0.4, 0.7}, // Car 5
+  {{CAR_LANE_2, 0.45, -4}, 0.5, 0.4, 0.7}, // Car 6
+  {{CAR_LANE_2, 0.45, 0}, 0.5, 0.4, 0.7}, // Car 7
+  {{CAR_LANE_2, 0.45, 5}, 0.5, 0.4, 0.7}, // Car 8
+  {{CAR_LANE_3, 0.45, -5}, 0.5, 0.4, 0.7}, // Car 9
+  {{CAR_LANE_3, 0.45, -1}, 0.5, 0.4, 0.7}, // Car 10
+  {{CAR_LANE_3, 0.45, 6}, 0.5, 0.4, 0.7}, // Car 11
+  {{CAR_LANE_3, 0.45, 9}, 0.5, 0.4, 0.7}, // Car 12
+  {{CAR_LANE_4, 0.45, -3}, 0.5, 0.4, 0.7},  // Car 13
+  {{CAR_LANE_4, 0.45, 1}, 0.5, 0.4, 0.7},  // Car 14
+  {{CAR_LANE_4, 0.45, 4}, 0.5, 0.4, 0.7},  // Car 15
+  {{CAR_LANE_4, 0.45, 7}, 0.5, 0.4, 0.7}  // Car 16
+};
+
 typedef struct {
   vec3f currentCoord;
   state projectile;
@@ -182,25 +201,6 @@ water_val water = {
   {-2.5, -.25, 0},
   { 0.2, (2*M_PI)/2.0, 2.0 },
   10, 2.5
-};
-
-car_val cars[] = {
-  {{CAR_LANE_1, 0.45, -9}, 0.5, 0.4, 0.7}, // Car 1
-  {{CAR_LANE_1, 0.45, -6}, 0.5, 0.4, 0.7}, // Car 2
-  {{CAR_LANE_1, 0.45, 3}, 0.5, 0.4, 0.7}, // Car 3
-  {{CAR_LANE_1, 0.45, 7}, 0.5, 0.4, 0.7}, // Car 4
-  {{CAR_LANE_2, 0.45, -8}, 0.5, 0.4, 0.7}, // Car 5
-  {{CAR_LANE_2, 0.45, -4}, 0.5, 0.4, 0.7}, // Car 6
-  {{CAR_LANE_2, 0.45, 0}, 0.5, 0.4, 0.7}, // Car 7
-  {{CAR_LANE_2, 0.45, 5}, 0.5, 0.4, 0.7}, // Car 8
-  {{CAR_LANE_3, 0.45, -5}, 0.5, 0.4, 0.7}, // Car 9
-  {{CAR_LANE_3, 0.45, -1}, 0.5, 0.4, 0.7}, // Car 10
-  {{CAR_LANE_3, 0.45, 6}, 0.5, 0.4, 0.7}, // Car 11
-  {{CAR_LANE_3, 0.45, 9}, 0.5, 0.4, 0.7}, // Car 12
-  {{CAR_LANE_4, 0.45, -3}, 0.5, 0.4, 0.7},  // Car 13
-  {{CAR_LANE_4, 0.45, 1}, 0.5, 0.4, 0.7},  // Car 14
-  {{CAR_LANE_4, 0.45, 4}, 0.5, 0.4, 0.7},  // Car 15
-  {{CAR_LANE_4, 0.45, 7}, 0.5, 0.4, 0.7}  // Car 16
 };
 
 log_val logs[] = {
@@ -587,14 +587,14 @@ void drawSin(water_val water) {
   glPopMatrix();
 }
 
-void drawRect(car_val car){
+void drawRect(car_val *car){
 
-  float length = car.length/2;
-  float width = car.width/2;
-  float height = car.height/2;
+  float length = car->length/2;
+  float width = car->length / 2;
+  float height = car->length / 2;
 
   glPushMatrix();
-    glTranslatef(car.currentCoord.x, car.currentCoord.y, car.currentCoord.z);
+    glTranslatef(car->currentCoord.x, car->currentCoord.y, car->currentCoord.z);
     drawAxes(0.5);
     glPushAttrib(GL_CURRENT_BIT);
       if (global.filled)
@@ -704,11 +704,34 @@ void drawRect(car_val car){
       glEnd();
     glPopAttrib();
   glPopMatrix();
+
+  if (!global.paused) {
+	  float speed = 0.0;
+	  float lane = car->currentCoord.x;
+
+	  if (lane == CAR_LANE_1) {
+		  speed = 0.05;
+	  }
+	  else if (lane == CAR_LANE_2) {
+		  speed = 0.07;
+	  }
+	  else if (lane == CAR_LANE_3) {
+		  speed = 0.08;
+	  }
+	  else {
+		  speed = 0.03;
+	  }
+
+	  car->currentCoord.z += speed;
+		  if (car->currentCoord.z >= 9.5) {
+			  car->currentCoord.z = -9.5;
+		  }
+  }
 }
 
 void drawCars(){
   for ( int i=0; i<global.nCars; i++){
-    drawRect(cars[i]);
+    drawRect(&cars[i]);
   }
 }
 
