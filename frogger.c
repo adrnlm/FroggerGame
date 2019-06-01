@@ -22,7 +22,7 @@
 #endif
 
 #define DEG2RAD  M_PI/180.0
-#define GRAVITY -0.25
+#define GRAVITY -0.75
 #define MILLI 1000
 #define INITIAL_COORD_X 8.5
 #define INITIAL_COORD_Y 0
@@ -82,7 +82,7 @@ typedef struct {
 Frog frog = {
   {INITIAL_COORD_X, INITIAL_COORD_Y, INITIAL_COORD_Y},
   {{ 0.0, 0.0, 0.0},{ 0.0, 0.0, 0.0},{ 0.0, 0.0, 0.0}},
-  {0.75, 45, 180},
+  {1.25, 45, 180},
   false,
   false,
   0.0,
@@ -103,6 +103,18 @@ typedef struct {
   land_v afterRoad;
 } land_t;
 
+land_t land = {
+  {-6.5, 0, 0, 10, 1.5},
+  {0.5, -5, 0, 10, .5},
+  {-2.5, -.75, 0, 10, 2.5},
+  {-0.5, 0, 0, 10, .5},
+  {1.5, 0, 0, 10, 1.5},
+  {0.5, -3, 0, 10, .5},
+  {5, 0.2, 0, 10, 2},
+  {-0.5, 7, 0, 10, .5},
+  {8.5, 0, 0, 10, 1.5}
+};
+
 typedef struct {
   vec3f coord;
   Sinewave wave;
@@ -110,11 +122,23 @@ typedef struct {
   float length;
 } water_val;
 
+Sinewave sw = { 0.2, (2 * M_PI) / 2.0, 2.0 };
+water_val water = {
+  {-2.5, -.25, 0},
+  { 0.2, (2 * M_PI) / 2.0, 2.0 },
+  10, 2.5
+};
+
 typedef struct {
   vec3f coord;
   float radius;
   float length;
 } log_val;
+
+log_val logs[] = {
+  {{-2, -0.25, 2}, LOG_RADIUS, LOG_LENGTH},
+  {{-4, -0.25, -2}, LOG_RADIUS, LOG_LENGTH}
+};
 
 typedef struct {
   // RENDER FUNCTIONS
@@ -181,31 +205,6 @@ Camera c = {
 	// MOUSE FUNCTIONS
 	false,
 	false
-};
-
-Sinewave sw = { 0.2, (2*M_PI)/2.0, 2.0 };
-
-land_t land = {
-  {-6.5, 0, 0, 10, 1.5},
-  {0.5, -5, 0, 10, .5},
-  {-2.5, -.75, 0, 10, 2.5},
-  {-0.5, 0, 0, 10, .5},
-  {1.5, 0, 0, 10, 1.5},
-  {0.5, -3, 0, 10, .5},
-  {5, 0.2, 0, 10, 2},
-  {-0.5, 7, 0, 10, .5},
-  {8.5, 0, 0, 10, 1.5}
-};
-
-water_val water = {
-  {-2.5, -.25, 0},
-  { 0.2, (2*M_PI)/2.0, 2.0 },
-  10, 2.5
-};
-
-log_val logs[] = {
-  {{-2, -0.25, 2}, LOG_RADIUS, LOG_LENGTH},
-  {{-4, -0.25, -2}, LOG_RADIUS, LOG_LENGTH}
 };
 
 // +++++++++++++++++++++++++++ DRAW FUNCTION ++++++++++++++++++++++++++++++
@@ -307,6 +306,130 @@ void drawNormal(float x, float y, float z,
   }
 }
 
+void respawn() {
+	frog.currentCoord.x = 8.5;
+	frog.currentCoord.y = 0;
+	frog.currentCoord.z = 0;
+	frog.polar.angle = 45;
+	frog.polar.speed = 1.25;
+	frog.onLog = false;
+	frog.jumping = false;
+	frog.currentAngle = frog.polar.angle;
+	frog.polar.rotation = 180;
+	frog.dead = false;
+}
+
+float carCollision(float frogX, float frogY, float frogZ) {
+	
+	/*	-1.0 : No collision
+	-2.0 : Collision (Death)
+	-3.0 : Collision with river (Start death animation)
+	Any other float : Collision (Return height for adjusting position)
+	*Enum is not used as float value is needed
+	*/
+	float value = -1.0;
+	float radius = 0.1;
+
+	if (frogY - radius <= 0.2) {
+		value = 0.3;
+	}
+
+	for (int i = 0; i < global.nCars; i++) {
+		float carX = cars[i].currentCoord.x;
+		float carY = cars[i].currentCoord.y;
+		float carZ = cars[i].currentCoord.z;
+		float length = cars[i].length/2;
+		float height = cars[i].height/2;
+		float width = cars[i].width/2;
+		float minX = carX - length;
+		float minY = carY - height;
+		float minZ = carZ - width;
+		float maxX = carX + length;
+		float maxY = carY + height;
+		float maxZ = carZ + width;
+		float x = max(minX, min(frogX, maxX));
+		float y = max(minY, min(frogY, maxY));
+		float z = max(minZ, min(frogZ, maxZ));
+
+		float distance = (x - frogX) * (x - frogX) + (y - frogY) * (y - frogY) + 
+			(z - frogZ) * (z - frogZ);
+
+		distance = sqrtf(distance);
+
+		if (distance < radius) {
+			value = -2.0;
+			printf("COLLISION DETECTED WITH CAR %d AT TIME : %f\n",i,global.time);
+		}
+	}
+
+	return value;
+}
+
+float groundCollision(float frogX, float frogY, float frogZ) {
+
+	/*	-1.0 : No collision
+		-2.0 : Collision (Death)
+		-3.0 : Collision with river (Start death animation)
+		Any other float : Collision (Return height for adjusting position)
+		*Enum is not used as float value is needed
+	*/
+	float value = -1.0;
+
+	if (frogY <= 0) {
+		value = fabsf(frogY);
+	}
+
+	if (frogX < 10.0 && frogX >= 7.0 && frogY <= 0) {
+		value = fabsf(frogY);
+	}else if (frogX < 7.0 && frogX >= 3.0) {
+		value = carCollision(frogX, frogY, frogZ);
+	}else if (frogX < 3.0 && frogX >= 0.0 && frogY <= 0) {
+		value = fabsf(frogY);;
+	}
+
+	/*
+		typedef struct {
+		  land_v beforeWater;
+		  land_v leftWaterWall;
+		  land_v underWater;
+		  land_v rightWaterWall;
+		  land_v afterWater;
+		  land_v leftRoadWall;
+		  land_v road;
+		  land_v rightRoadWall;
+		  land_v afterRoad;
+		} land_t;
+
+		land_t land = {
+		  {-6.5, 0, 0, 10, 1.5},
+		  {0.5, -5, 0, 10, .5},
+		  {-2.5, -.75, 0, 10, 2.5},
+		  {-0.5, 0, 0, 10, .5},
+		  {1.5, 0, 0, 10, 1.5},
+		  {0.5, -3, 0, 10, .5},
+		  {5, 0.2, 0, 10, 2},
+		  {-0.5, 7, 0, 10, .5},
+		  {8.5, 0, 0, 10, 1.5}
+		};
+	*/
+
+	return value;
+}
+
+/* Adjust position of frog based on the collision location */
+void adjustPosition(float y) {
+
+	if (y == -2.0) {
+		respawn();
+	}
+	else if (y == -3.0) {
+		frog.deadTime = global.time;
+		frog.dead = true;
+	}
+	else
+		frog.currentCoord.y = y;
+}
+
 void drawTrajectoryNumerical() {
 	glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
 	glLineWidth(2.5);
@@ -328,13 +451,13 @@ void drawTrajectoryNumerical() {
 
 		frog.projectile.v0.y += GRAVITY * dt;
 
-		/*if (groundCollision(frog.projectile.r0.x, frog.projectile.r0.y) != -1.0) {
-			break;
-		}*/
-
-		if (frog.projectile.r0.y <= 0) {
+		if (groundCollision(frog.projectile.r0.x, frog.projectile.r0.y, frog.projectile.r0.z) != -1.0) {
 			break;
 		}
+
+		//if (frog.projectile.r0.y <= 0) {
+		//	break;
+		//}
 
 		glVertex3f(frog.projectile.r0.x, frog.projectile.r0.y, frog.projectile.r0.z);
 	}
@@ -411,7 +534,7 @@ void drawFrog(Frog frog){
 
   glPushMatrix();
     glTranslatef(ix,iy,iz);
-    glRotatef(frog.polar.rotation,0,1,0);
+    glRotatef(frog.polar.rotation, 0, 1, 0);
     drawAxes(0.5);
 	glRotatef(frog.currentAngle, 0, 0, 1);
 
@@ -705,6 +828,12 @@ void drawRect(car_val *car){
     glPopAttrib();
   glPopMatrix();
 
+  if (!frog.jumping && frog.currentCoord.x < 7.0 && frog.currentCoord.x >= 3.0) {
+	  if (carCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z) == -2) {
+		  respawn();
+	  }
+  }
+
   if (!global.paused) {
 	  float speed = 0.0;
 	  float lane = car->currentCoord.x;
@@ -713,18 +842,18 @@ void drawRect(car_val *car){
 		  speed = 0.05;
 	  }
 	  else if (lane == CAR_LANE_2) {
-		  speed = 0.07;
+		  speed = -0.07;
 	  }
 	  else if (lane == CAR_LANE_3) {
 		  speed = 0.08;
 	  }
 	  else {
-		  speed = 0.03;
+		  speed = -0.03;
 	  }
 
 	  car->currentCoord.z += speed;
-		  if (car->currentCoord.z >= 9.5) {
-			  car->currentCoord.z = -9.5;
+		  if (car->currentCoord.z >= 9.5 || car->currentCoord.z <= -9.5) {
+			  car->currentCoord.z *= -1;
 		  }
   }
 }
@@ -832,12 +961,30 @@ void idle(){
 		/* Velocity */
 		frog.projectile.v.y += GRAVITY * dt;
 
-		if (frog.currentCoord.y <= 0) {
+		if (groundCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z) != -1.0) {
+
+			adjustPosition(groundCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z));
 
 			if(!frog.dead)
 				frog.currentAngle = frog.polar.angle;
 
+			printf("Frog's location x : %f, y: %f, z : %f\n", frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z);
+
 			frog.jumping = false;
+		}
+
+		if (frog.currentCoord.z > 10.0) {
+			frog.currentCoord.z = 10.0;
+		}
+		else if (frog.currentCoord.z < -10.0) {
+			frog.currentCoord.z = -10.0;
+		}
+
+		if (frog.currentCoord.x > 10.0) {
+			frog.currentCoord.x = 10.0;
+		}
+		else if (frog.currentCoord.x < -8.0) {
+			frog.currentCoord.x = -8.0;
 		}
 	}
 
@@ -1028,12 +1175,12 @@ void SpecialInput(int key, int x, int y){
 	switch (key)
 	{
 	case GLUT_KEY_UP:
-		if (frog.polar.speed < 0.75)
-			frog.polar.speed += 0.03;
+		if (frog.polar.speed < 1.25)
+			frog.polar.speed += 0.05;
 		break;
 	case GLUT_KEY_DOWN:
 		if (frog.polar.speed > 0.1)
-			frog.polar.speed -= 0.03;
+			frog.polar.speed -= 0.05;
 		break;
 	case GLUT_KEY_LEFT:
 		if (frog.polar.angle < 90)
