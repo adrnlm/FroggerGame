@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h>
 
 /* For VS2017 only */
 #define _USE_MATH_DEFINES
@@ -31,6 +30,8 @@
 #define CAR_LANE_2 4.5
 #define CAR_LANE_3 5.5
 #define CAR_LANE_4 6.5
+#define LOG_LANE_1 -2
+#define LOG_LANE_2 -4
 #define LOG_RADIUS 0.25
 #define LOG_LENGTH 2
 
@@ -136,8 +137,12 @@ typedef struct {
 } log_val;
 
 log_val logs[] = {
-  {{-2, -0.25, 2}, LOG_RADIUS, LOG_LENGTH},
-  {{-4, -0.25, -2}, LOG_RADIUS, LOG_LENGTH}
+  {{LOG_LANE_1, -0.25, -8}, LOG_RADIUS, LOG_LENGTH},
+  {{LOG_LANE_1, -0.25, -1}, LOG_RADIUS, LOG_LENGTH},
+  {{LOG_LANE_1, -0.25, 5}, LOG_RADIUS, LOG_LENGTH},
+  {{LOG_LANE_2, -0.25, -5}, LOG_RADIUS, LOG_LENGTH},
+  {{LOG_LANE_2, -0.25, 1}, LOG_RADIUS, LOG_LENGTH},
+  {{LOG_LANE_2, -0.25, 7}, LOG_RADIUS, LOG_LENGTH}
 };
 
 typedef struct {
@@ -153,8 +158,6 @@ typedef struct {
   int row;
   int column;
   float scale;
-  int nCars;
-  int nLogs;
   float pauseT;
   bool paused;
   int frames;
@@ -171,8 +174,6 @@ global_val global = {
 	8,
 	10, 2,
 	0.5,
-	16,
-	2,
 	0.0,
 	false,
 	0,
@@ -185,7 +186,7 @@ typedef struct {
 	// CAMERA ROTATION
 	int rotationX, rotationY, lastX, lastY;
 	// CAMERA
-	float offsetX, offsetZ;
+	float offsetX, offsetY, offsetZ;
 	float zoom;
 	float aspectRatio;
 	float sensitivity;
@@ -198,7 +199,7 @@ Camera c = {
 	// CAMERA ROTATION
 	0,75,0,0,
 	// CAMERA
-	0.0,-20.0,
+	0.0,0.0,-15.0,
 	0.0,
 	0.0,
 	0.4,
@@ -334,7 +335,7 @@ float carCollision(float frogX, float frogY, float frogZ) {
 		value = 0.3;
 	}
 
-	for (int i = 0; i < global.nCars; i++) {
+	for (int i = 0 ; i < sizeof(cars) / sizeof(car_val) ; i++) {
 		float carX = cars[i].currentCoord.x;
 		float carY = cars[i].currentCoord.y;
 		float carZ = cars[i].currentCoord.z;
@@ -358,7 +359,6 @@ float carCollision(float frogX, float frogY, float frogZ) {
 
 		if (distance < radius) {
 			value = -2.0;
-			printf("COLLISION DETECTED WITH CAR %d AT TIME : %f\n",i,global.time);
 		}
 	}
 
@@ -716,6 +716,35 @@ void drawRect(car_val *car){
   float width = car->length / 2;
   float height = car->length / 2;
 
+  if (!frog.jumping && frog.currentCoord.x < 7.0 && frog.currentCoord.x >= 3.0) {
+	  if (carCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z) == -2) {
+		  respawn();
+	  }
+  }
+
+  if (!global.paused) {
+	  float speed = 0.0;
+	  float lane = car->currentCoord.x;
+
+	  if (lane == CAR_LANE_1) {
+		  speed = 0.05;
+	  }
+	  else if (lane == CAR_LANE_2) {
+		  speed = -0.07;
+	  }
+	  else if (lane == CAR_LANE_3) {
+		  speed = 0.08;
+	  }
+	  else {
+		  speed = -0.03;
+	  }
+
+	  car->currentCoord.z += speed;
+	  if (car->currentCoord.z >= 9.5 || car->currentCoord.z <= -9.5) {
+		  car->currentCoord.z *= -1;
+	  }
+  }
+
   glPushMatrix();
     glTranslatef(car->currentCoord.x, car->currentCoord.y, car->currentCoord.z);
     drawAxes(0.5);
@@ -827,51 +856,38 @@ void drawRect(car_val *car){
       glEnd();
     glPopAttrib();
   glPopMatrix();
-
-  if (!frog.jumping && frog.currentCoord.x < 7.0 && frog.currentCoord.x >= 3.0) {
-	  if (carCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z) == -2) {
-		  respawn();
-	  }
-  }
-
-  if (!global.paused) {
-	  float speed = 0.0;
-	  float lane = car->currentCoord.x;
-
-	  if (lane == CAR_LANE_1) {
-		  speed = 0.05;
-	  }
-	  else if (lane == CAR_LANE_2) {
-		  speed = -0.07;
-	  }
-	  else if (lane == CAR_LANE_3) {
-		  speed = 0.08;
-	  }
-	  else {
-		  speed = -0.03;
-	  }
-
-	  car->currentCoord.z += speed;
-		  if (car->currentCoord.z >= 9.5 || car->currentCoord.z <= -9.5) {
-			  car->currentCoord.z *= -1;
-		  }
-  }
 }
 
 void drawCars(){
-  for ( int i=0; i<global.nCars; i++){
+  for ( int i = 0 ; i < sizeof(cars)/sizeof(car_val) ; i++){
     drawRect(&cars[i]);
   }
 }
 
-void drawCyl(log_val log){
-  float radius = log.radius;
-  float halfLength = log.length/2;
+void drawCyl(log_val *log){
+  float radius = log->radius;
+  float halfLength = log->length/2;
   int slices = global.tess;
   float pi2 = 2*M_PI;
 
+  if (!global.paused) {
+	  float speed = 0;
+
+	  if (log->coord.x == LOG_LANE_1) {
+		  speed = 0.023;
+	  }
+	  else {
+		  speed = -0.017;
+	  }
+
+	  log->coord.z += speed;
+	  if (log->coord.z >= 9 || log->coord.z <= -9) {
+		  log->coord.z *= -1;
+	  }
+  }
+
   glPushMatrix();
-    glTranslatef(log.coord.x, log.coord.y, log.coord.z);
+    glTranslatef(log->coord.x, log->coord.y, log->coord.z);
     drawAxes(0.5);
     glPushAttrib(GL_CURRENT_BIT);
     if (global.filled)
@@ -929,9 +945,8 @@ void drawCyl(log_val log){
 }
 
 void drawLogs(){
-  for ( int i=0; i<global.nLogs; i++){
-
-    drawCyl(logs[i]);
+  for ( int i=0 ; i< sizeof(logs)/sizeof(log_val) ; i++){
+    drawCyl(&logs[i]);
   }
 }
 // +++++++++++++++++++++++++++ IDLE FUNCTION ++++++++++++++++++++++++++++++++
@@ -1018,6 +1033,10 @@ void mouse(int button, int state, int x, int y){
 
 		if (button == GLUT_RIGHT_BUTTON) {
 			c.RMB = true;
+			if (glutGetModifiers() == GLUT_ACTIVE_CTRL) {
+				c.offsetX = 0.0;
+				c.offsetY = 0.0;
+			}
 		}
 	}
 
@@ -1025,13 +1044,21 @@ void mouse(int button, int state, int x, int y){
 
 void mouseMotion(int x, int y){
 
-	if (c.LMB) {
-		c.rotationX += (x - c.lastX);
-		c.rotationY += (y - c.lastY);
+	if (glutGetModifiers() == GLUT_ACTIVE_CTRL) {
+		if (c.LMB) {
+			c.offsetX -= (x - c.lastX) / 100.0;
+			c.offsetY -= (y - c.lastY) / 100.0;
+		}
 	}
+	else {
+		if (c.LMB) {
+			c.rotationX += (x - c.lastX);
+			c.rotationY += (y - c.lastY);
+		}
 
-	if (c.RMB) {
-		c.zoom += (c.lastY - y) / 100.0;
+		if (c.RMB) {
+			c.zoom += (c.lastY - y) / 100.0;
+		}
 	}
 
 	c.lastX = x;
@@ -1092,9 +1119,10 @@ void display(){
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
   gluPerspective(75, c.aspectRatio, 0.01, 100);
-  glTranslatef(c.offsetX, 0, c.zoom + c.offsetZ);
+  glTranslatef(0, 0, c.zoom + c.offsetZ);
   glRotatef(c.rotationY*c.sensitivity, 1.0, 0, 0);
   glRotatef(c.rotationX*c.sensitivity, 0, 1.0, 0);
+  glTranslatef(c.offsetX, c.offsetY, 0);
   glTranslatef(-frog.currentCoord.x, -frog.currentCoord.y, -frog.currentCoord.z);
   glMatrixMode(GL_MODELVIEW);
 
