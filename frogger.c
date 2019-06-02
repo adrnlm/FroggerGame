@@ -20,6 +20,8 @@
 #   include <GL/glut.h>
 #endif
 
+#include <SOIL.h>
+
 #define DEG2RAD  M_PI/180.0
 #define GRAVITY -0.75
 #define MILLI 1000
@@ -155,6 +157,7 @@ typedef struct {
   bool normals;
   bool go;
   bool OSD;
+  bool texture;
   // VARIABLES
   float time;
   int tess;
@@ -167,11 +170,13 @@ typedef struct {
   float frameRate;
   float frameRateInterval;
   float lastFrameRateT;
+  int score;
+  int lives;
 } global_val;
 
 global_val global = {
 	// RENDER FUNCTIONS
-	false, false, true, true, false, false,
+	false, false, true, true, false, false, false,
 	// VARIABLES
 	0.0,
 	8,
@@ -182,7 +187,9 @@ global_val global = {
 	0,
 	0.0,
 	0.2,
-	0.0
+	0.0,
+	0,
+	5
 };
 
 typedef struct {
@@ -210,6 +217,11 @@ Camera c = {
 	false,
 	false
 };
+
+static GLuint grass;
+static GLuint wood;
+static GLuint sand;
+static GLuint road;
 
 // +++++++++++++++++++++++++++ DRAW FUNCTION ++++++++++++++++++++++++++++++
 
@@ -258,6 +270,20 @@ void displayOSD()
 	for (bufp = buffer; *bufp; bufp++)
 		glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *bufp);
 
+	/* Score */
+	glColor3f(0.0, 1.0, 0.0);
+	glRasterPos2i(10, h - 20);
+	snprintf(buffer, sizeof buffer, "Score : %d", global.score);
+	for (bufp = buffer; *bufp; bufp++)
+		glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *bufp);
+
+	/* Score */
+	glColor3f(0.0, 1.0, 0.0);
+	glRasterPos2i(10, h - 40);
+	snprintf(buffer, sizeof buffer, "Lives left : %d", global.lives);
+	for (bufp = buffer; *bufp; bufp++)
+		glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *bufp);
+
 	/* Pop modelview */
 	glPopMatrix();
 	glMatrixMode(GL_PROJECTION);
@@ -280,7 +306,7 @@ void drawAxes(float length){
 
           GLfloat shiny[] = { 128 }; // SHINY!
 
-          GLfloat red[] = { 1.0, 0.0, 0.0 }; // MATERIAL RGBA
+          GLfloat red[] = { 1.0, 0.0, 0.0, 1.0 }; // MATERIAL RGBA
           glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, red);
           glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, red);
           glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, red);
@@ -289,7 +315,7 @@ void drawAxes(float length){
           glVertex3f(0, 0, 0);
           glVertex3f(length, 0.0, 0.0);
 
-          GLfloat green[] = { 0.0, 1.0, 0.0 }; // MATERIAL RGBA
+          GLfloat green[] = { 0.0, 1.0, 0.0, 1.0 }; // MATERIAL RGBA
           glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, green);
           glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, green);
           glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, green);
@@ -298,7 +324,7 @@ void drawAxes(float length){
           glVertex3f(0, 0, 0);
           glVertex3f(0.0, length, 0.0);
 
-          GLfloat blue[] = { 0.0, 0.0, 1.0 }; // MATERIAL RGBA
+          GLfloat blue[] = { 0.0, 0.0, 1.0, 1.0 }; // MATERIAL RGBA
           glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, blue);
           glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, blue);
           glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, blue);
@@ -333,7 +359,7 @@ void drawNormal(float x, float y, float z,
         dyy /= mag_xx;
 
       glPushAttrib(GL_CURRENT_BIT);
-        GLfloat color[] = { 1.0, 1.0, 0.0 }; // MATERIAL RGBA
+        GLfloat color[] = { 1.0, 1.0, 0.0, 1.0 }; // MATERIAL RGBA
         GLfloat shiny[] = { 128 }; // SHINY!
         glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
         glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, color);
@@ -352,7 +378,7 @@ void drawNormal(float x, float y, float z,
     }
     else{
       glPushAttrib(GL_CURRENT_BIT);
-      GLfloat color[] = { 1.0, 1.0, 0.0 }; // MATERIAL RGBA
+      GLfloat color[] = { 1.0, 1.0, 0.0, 1.0 }; // MATERIAL RGBA
       glColor3f(1, 1, 0); //YELLOW
       glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
       glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, color);
@@ -537,39 +563,24 @@ float groundCollision(float frogX, float frogY, float frogZ) {
 		value = frogR;
 	}
 
-	/*
-		typedef struct {
-		  land_v beforeWater;
-		  land_v leftWaterWall;
-		  land_v underWater;
-		  land_v rightWaterWall;
-		  land_v afterWater;
-		  land_v leftRoadWall;
-		  land_v road;
-		  land_v rightRoadWall;
-		  land_v afterRoad;
-		} land_t;
-
-		land_t land = {
-		  {-6.5, 0, 0, 10, 1.5},
-		  {0.5, -5, 0, 10, .5},
-		  {-2.5, -.75, 0, 10, 2.5},
-		  {-0.5, 0, 0, 10, .5},
-		  {1.5, 0, 0, 10, 1.5},
-		  {0.5, -3, 0, 10, .5},
-		  {5, 0.2, 0, 10, 2},
-		  {-0.5, 7, 0, 10, .5},
-		  {8.5, 0, 0, 10, 1.5}
-		};
-	*/
-
 	return value;
+}
+
+void deductLives() {
+	if (global.lives > 0) {
+		global.lives--;
+	}
+	else {
+		global.lives = 5;
+		global.score = 0;
+	}
 }
 
 /* Adjust position of frog based on the collision location */
 void adjustPosition(float y) {
 
 	if (y == -2.0) {
+		deductLives();
 		respawn();
 	}
 	else if (y == -3.0) {
@@ -605,10 +616,6 @@ void drawTrajectoryNumerical() {
 			break;
 		}
 
-		//if (frog.projectile.r0.y <= 0) {
-		//	break;
-		//}
-
 		glVertex3f(frog.projectile.r0.x, frog.projectile.r0.y, frog.projectile.r0.z);
 	}
 	glEnd();
@@ -619,7 +626,7 @@ void drawVector(float scale) {
 	glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
 	glLineWidth(2.5);
 	GLfloat shiny[] = { 128 };
-	GLfloat white[] = { 1.0, 1.0, 1.0 };
+	GLfloat white[] = { 1.0, 1.0, 1.0 , 1.0};
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, white);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, white);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, white);
@@ -663,8 +670,6 @@ void drawVector(float scale) {
 	frog.projectile.v0.y = y;
 	frog.projectile.v0.z = z;
 
-	//printf("X speed: %f, Y speed: %f, Z speed: %f Rotation: %f\n", x,y,z,frog.polar.rotation);
-
 	x *= scale;
 	y *= scale;
 	z *= scale;
@@ -701,7 +706,7 @@ void drawFrog(Frog frog){
     else{
       glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     }
-    GLfloat color[] = { 1, 0, 1 }; // MATERIAL RGBA
+    GLfloat color[] = { 1.0, 0.0, 1.0, 1.0 }; // MATERIAL RGBA
     GLfloat shiny[] = { 128 }; // SHINY!
     glPushAttrib(GL_CURRENT_BIT);
       glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
@@ -733,11 +738,20 @@ void drawFrog(Frog frog){
       glEnd();
     glPopAttrib();
   glPopMatrix();
-  drawVector(2);
+  drawVector(1.5);
   drawTrajectoryNumerical();
 }
 
 void drawGrid(land_v grid){
+	bool roadTextured = false;
+	bool sandTextured = false;
+
+	if (grid.x == 5) {
+		roadTextured = true;
+	}
+	else if (grid.x == -2.5) {
+		sandTextured = true;
+	}
 
   float ix = grid.x;
   float iy = grid.y;
@@ -761,31 +775,94 @@ void drawGrid(land_v grid){
           glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         }
         glPushAttrib(GL_CURRENT_BIT);
-        GLfloat color[] = { 0.0, 1.0, 0.0 }; // MATERIAL RGBA
+
+		float r, g, b;
+
+		if (roadTextured) {
+			r = 201 / 255.0;
+			g = 212 / 255.0;
+			b = 234 / 255.0;
+		}
+		else if (sandTextured) {
+			r = 237 / 255.0;
+			g = 201 / 255.0;
+			b = 175 / 255.0;
+		}
+		else {
+			r = 107 / 255.0;
+			g = 255 / 255.0;
+			b = 134 / 255.0;
+		}
+
+		if (!global.texture && !global.filled) {
+			r = b = 0;
+			g = 1;
+		}
+
+        GLfloat color[] = { r, g, b, 1.0 }; // MATERIAL RGBA
         GLfloat shiny[] = { 128 }; // SHINY!
         glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
         glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, color);
         glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, color);
         glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shiny);
-        glColor3f(0,1,0); // RGB-GREEN
+		glColor3f(r, g, b);
 
-        glBegin(GL_TRIANGLES);
+		if (roadTextured) {
+			glBindTexture(GL_TEXTURE_2D, road);
+			glBegin(GL_TRIANGLES);
+			glNormal3f(x, y, z); // Normal
+			glTexCoord2f(0, 0);
+			glVertex3f(x, y, z);
+			glNormal3f(x + 1, y, z); // Normal
+			glTexCoord2f(0.5, 0.5);
+			glVertex3f(x + 1, y, z);
+			glNormal3f(x + 1, y, z - 1); // Normal
+			glTexCoord2f(0, 0.5);
+			glVertex3f(x + 1, y, z - 1);
 
-        glNormal3f(x, y, z); // Normal
-        glVertex3f(x, y, z);
-        glNormal3f(x+1, y, z); // Normal
-        glVertex3f(x+1, y, z);
-        glNormal3f(x+1, y, z-1); // Normal
-        glVertex3f(x+1, y, z-1);
+			glNormal3f(x, y, z - 1); // Normal
+			glTexCoord2f(0, 0);
+			glVertex3f(x, y, z - 1);
+			glNormal3f(x, y, z); // Normal
+			glTexCoord2f(0.5, 0);
+			glVertex3f(x, y, z);
+			glNormal3f(x + 1, y, z - 1); // Normal
+			glTexCoord2f(0.5, 0.5);
+			glVertex3f(x + 1, y, z - 1);
+			glEnd();
+			glBindTexture(GL_TEXTURE_2D, 0);
+		}
+		else {
+			if (sandTextured) {
+				glBindTexture(GL_TEXTURE_2D, sand);
+			}
+			else {
+				glBindTexture(GL_TEXTURE_2D, grass);
+			}
+			glBegin(GL_TRIANGLES);
+			glNormal3f(x, y, z); // Normal
+			glTexCoord2f(0.1, 0.1);
+			glVertex3f(x, y, z);
+			glNormal3f(x + 1, y, z); // Normal
+			glTexCoord2f(0.5, 0.5);
+			glVertex3f(x + 1, y, z);
+			glNormal3f(x + 1, y, z - 1); // Normal
+			glTexCoord2f(0.1, 0.5);
+			glVertex3f(x + 1, y, z - 1);
 
-        glNormal3f(x, y, z-1); // Normal
-        glVertex3f(x, y, z-1);
-        glNormal3f(x, y, z); // Normal
-        glVertex3f(x, y, z);
-        glNormal3f(x+1, y, z-1); // Normal
-        glVertex3f(x+1, y, z-1);
-
-        glEnd();
+			glNormal3f(x, y, z - 1); // Normal
+			glTexCoord2f(0.1, 0.1);
+			glVertex3f(x, y, z - 1);
+			glNormal3f(x, y, z); // Normal
+			glTexCoord2f(0.5, 0.1);
+			glVertex3f(x, y, z);
+			glNormal3f(x + 1, y, z - 1); // Normal
+			glTexCoord2f(0.5, 0.5);
+			glVertex3f(x + 1, y, z - 1);
+			glEnd();
+			glBindTexture(GL_TEXTURE_2D, 0);
+		}
+        
         glPopAttrib();
         // glEnd();
 
@@ -833,7 +910,7 @@ void drawRiver(water_val water) {
           glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         }
         glPushAttrib(GL_CURRENT_BIT);
-          GLfloat color[] = { 0.0, 1.0, 1.0 }; // MATERIAL RGBA
+          GLfloat color[] = { 0.0, 1.0, 1.0 , 0.5 }; // MATERIAL RGBA
           GLfloat shiny[] = { 128 }; // SHINY!
           glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
           glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, color);
@@ -875,6 +952,7 @@ void drawRect(car_val *car){
 
   if (!frog.jumping && frog.currentCoord.x < 7.0 && frog.currentCoord.x >= 3.0) {
 	  if (carCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z) == -2) {
+		  deductLives();
 		  respawn();
 	  }
   }
@@ -911,7 +989,7 @@ void drawRect(car_val *car){
       else
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-      GLfloat color[] = { 1.0, 0.0, 0.0 }; // MATERIAL RGBA
+      GLfloat color[] = { 1.0, 0.0, 0.0, 1.0 }; // MATERIAL RGBA
       GLfloat shiny[] = { 128 }; // SHINY!
       glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
       glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, color);
@@ -1060,45 +1138,60 @@ void drawCyl(log_val *log){
       float y = radius * sinf(i*(pi2/slices));
       float xx = radius * cosf((i+1)*(pi2/slices));
       float yy = radius * sinf((i+1)*(pi2/slices));
+	  float min = 0.01;
+	  float max = 0.99;
 
-
-      GLfloat color[] = { 188 / 255.0, 149 / 255.0, 18 / 255.0 }; // MATERIAL RGBA BROWN
+      GLfloat color[] = { 188 / 255.0, 149 / 255.0, 18 / 255.0 , 1.0 }; // MATERIAL RGBA BROWN
       GLfloat shiny[] = { 128 }; // SHINY!
       glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
       glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, color);
       glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, color);
       glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shiny);
 
+	  glBindTexture(GL_TEXTURE_2D, wood);
       glBegin(GL_TRIANGLES);
       glColor3f(188 / 255.0, 149 / 255.0, 18 / 255.0);
         glNormal3f(0,0,halfLength);
+		glTexCoord2f(min, min);
         glVertex3f(0,0,halfLength);
         glNormal3f(x,y,halfLength);
+		glTexCoord2f(max, max);
         glVertex3f(x,y,halfLength);
         glNormal3f(xx,yy,halfLength);
+		glTexCoord2f(min, max);
         glVertex3f(xx,yy,halfLength);
 
         glNormal3f(0,0,-halfLength);
+		glTexCoord2f(min, min);
         glVertex3f(0,0,-halfLength);
         glNormal3f(x,y,-halfLength);
+		glTexCoord2f(max, min);
         glVertex3f(x,y,-halfLength);
         glNormal3f(xx,yy,-halfLength);
+		glTexCoord2f(min, max);
         glVertex3f(xx,yy,-halfLength);
 
         glNormal3f(x,y,halfLength);
+		glTexCoord2f(min, min);
         glVertex3f(x,y,halfLength);
         glNormal3f(xx,yy,halfLength);
+		glTexCoord2f(max, max);
         glVertex3f(xx,yy,halfLength);
         glNormal3f(xx,yy,-halfLength);
+		glTexCoord2f(min, max);
         glVertex3f(xx,yy,-halfLength);
 
         glNormal3f(x,y,halfLength);
+		glTexCoord2f(min, min);
         glVertex3f(x,y,halfLength);
         glNormal3f(xx,yy,-halfLength);
+		glTexCoord2f(max, min);
         glVertex3f(xx,yy,-halfLength);
         glNormal3f(x,y,-halfLength);
+		glTexCoord2f(min, max);
         glVertex3f(x,y,-halfLength);
       glEnd();
+	  glBindTexture(GL_TEXTURE_2D, 0);
     }
     glPopAttrib();
   glPopMatrix();
@@ -1109,6 +1202,21 @@ void drawLogs(){
     drawCyl(&logs[i]);
   }
 }
+
+static GLuint loadTexture(const char *filename)
+{
+	GLuint tex = SOIL_load_OGL_texture(filename, SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS | SOIL_FLAG_INVERT_Y);
+	if (!tex)
+		return 0;
+
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	return tex;
+}
+
 // +++++++++++++++++++++++++++ IDLE FUNCTION ++++++++++++++++++++++++++++++++
 
 void idle(){
@@ -1160,8 +1268,6 @@ void idle(){
 			if(!frog.dead)
 				frog.currentAngle = frog.polar.angle;
 
-			printf("Frog's location x : %f, y: %f, z : %f\n", frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z);
-
 			frog.jumping = false;
 		}
 
@@ -1177,6 +1283,11 @@ void idle(){
 		}
 		else if (frog.currentCoord.x < -8.0) {
 			frog.currentCoord.x = -8.0;
+		}
+
+		if (frog.currentCoord.x < -7.5) {
+			global.score++;
+			respawn();
 		}
 	}
 
@@ -1268,50 +1379,61 @@ void mouseMotion(int x, int y){
 void init(){
   /* In this program these OpenGL calls only need to be done once,
     but normally they would go elsewhere, e.g. display */
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	grass = loadTexture("grass.jpg");
+	wood = loadTexture("wood.jpg");
+	sand = loadTexture("sand.jpg");
+	road = loadTexture("road.png");
+}
 
-  // glMatrixMode(GL_PROJECTION);
-  // glOrtho(-2.0, 2.0, -2.0, 2.0, -2.0, 2.0);
-  // glMatrixMode(GL_MODELVIEW);
+void enableFeatures() {
+	if (global.lighting) {
+		glEnable(GL_LIGHTING);
+	}
+	else {
+		glDisable(GL_LIGHTING);
+	}
 
-  if (global.lighting){
-    glEnable(GL_LIGHTING);
-  }
-  else{
-    glDisable(GL_LIGHTING);
-  }
+	if (global.normals) {
+		glEnable(GL_NORMALIZE);
+	}
+	else {
+		glDisable(GL_NORMALIZE);
+	}
 
-  if (global.normals){
-    glEnable(GL_NORMALIZE);
-  }
-  else{
-    glDisable(GL_NORMALIZE);
-  }
+	if (global.texture) {
+		glEnable(GL_TEXTURE_2D);
+	}
+	else {
+		glDisable(GL_TEXTURE_2D);
+	}
 
-  GLfloat mat_specular[] = { 1, 1, 1, 1 }; // RGBA
-  GLfloat mat_ambience[] = { 1, 1, 1, 1 }; // RGBA
-  GLfloat mat_diffuse[] = { .8, .8, .8, 1 }; // RGBA
-  GLfloat mat_shininess[] = { 128 }; // Range from 0 -> 128
-  GLfloat light_ambient[] = { 0.45, 0.45, 0.45, 0.45 };
-  GLfloat light_diffuse[] = { 0.3, 0.3, 0.3, 1.0 };
-  GLfloat light_specular[] = { 1.0, 1.0, 1.0, 1.0 };
-  GLfloat light_position[] = { 0.2, 0.1, 1.0, 0.1 };
+	GLfloat mat_specular[] = { 1, 1, 1, 1 }; // RGBA
+	GLfloat mat_ambience[] = { 1, 1, 1, 1 }; // RGBA
+	GLfloat mat_diffuse[] = { .8, .8, .8, 1 }; // RGBA
+	GLfloat mat_shininess[] = { 128 }; // Range from 0 -> 128
+	GLfloat light_ambient[] = { 0.45, 0.45, 0.45, 0.45 };
+	GLfloat light_diffuse[] = { 0.3, 0.3, 0.3, 1.0 };
+	GLfloat light_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+	GLfloat light_position[] = { 0.2, 0.1, 1.0, 0.1 };
 
-  glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-  glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-  glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
-  glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+	glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+	glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+	glLightfv(GL_LIGHT0, GL_POSITION, light_position);
 
-  glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, mat_ambience);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_specular);
-  glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, mat_shininess);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, mat_ambience);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_specular);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, mat_shininess);
 
-  glEnable(GL_LIGHT0);
+	glEnable(GL_LIGHT0);
 }
 
 void display(){
 
-  init();
+	enableFeatures();
 
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   glEnable(GL_DEPTH_TEST);
@@ -1360,9 +1482,6 @@ void display(){
     drawGrid(land.afterRoad); // AFTER ROAD
   glPopMatrix();
 
-  // WATER
-  drawRiver(water);
-
   // FROG
   glPushMatrix();
     glTranslatef(0.0, 0.1, 0.0);
@@ -1374,6 +1493,9 @@ void display(){
 
   // LOGS
   drawLogs();
+
+  // WATER
+  drawRiver(water);
 
   /* Display OSD */
   if (global.OSD)
@@ -1390,8 +1512,6 @@ void display(){
 }
 
 void reshape(int width, int height) {
-	printf("Window width : %d, Window height : %d\n", width, height);
-
 	glViewport(0, 0, width, height);
 
 	c.aspectRatio = ((float)width / (float)height);
@@ -1482,6 +1602,9 @@ void keyboard(unsigned char key, int x, int y){
   case 'o':
 	  global.OSD = !global.OSD;
 	  break;
+  case 't':
+	  global.texture = !global.texture;
+	  break;
   case 'g':
 	  if (!global.paused)
 		  global.paused = true;
@@ -1517,7 +1640,7 @@ int main(int argc, char **argv){
   glutInitWindowSize(700, 700);
   glutCreateWindow("Frogger | Assignment 2");
 
-  // init();
+  init();
 
   glutIdleFunc(idle);
   glutDisplayFunc(display);
