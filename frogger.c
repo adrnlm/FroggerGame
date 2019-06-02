@@ -618,6 +618,13 @@ void drawTrajectoryNumerical() {
 void drawVector(float scale) {
 	glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
 	glLineWidth(2.5);
+	GLfloat shiny[] = { 128 };
+	GLfloat white[] = { 1.0, 1.0, 1.0 };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, white);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, white);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, white);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shiny);
+
 	glBegin(GL_LINES);
 	glColor3f(1, 1, 1);
 	glVertex3f(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z);
@@ -1284,9 +1291,16 @@ void init(){
   GLfloat mat_ambience[] = { 1, 1, 1, 1 }; // RGBA
   GLfloat mat_diffuse[] = { .8, .8, .8, 1 }; // RGBA
   GLfloat mat_shininess[] = { 128 }; // Range from 0 -> 128
-  GLfloat light_position[] = { 1, 1, 1, 0 };
+  GLfloat light_ambient[] = { 0.45, 0.45, 0.45, 0.45 };
+  GLfloat light_diffuse[] = { 0.3, 0.3, 0.3, 1.0 };
+  GLfloat light_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+  GLfloat light_position[] = { 0.2, 0.1, 1.0, 0.1 };
 
+  glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+  glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+  glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+
   glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);
   glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, mat_ambience);
   glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_specular);
