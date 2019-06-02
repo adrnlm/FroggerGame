@@ -186,7 +186,7 @@ typedef struct {
 	// CAMERA ROTATION
 	int rotationX, rotationY, lastX, lastY;
 	// CAMERA
-	float offsetX, offsetY, offsetZ;
+	float offsetX, offsetY;
 	float zoom;
 	float aspectRatio;
 	float sensitivity;
@@ -199,8 +199,8 @@ Camera c = {
 	// CAMERA ROTATION
 	0,75,0,0,
 	// CAMERA
-	0.0,0.0,-15.0,
-	0.0,
+	0.0,0.0,
+	-15.0,
 	0.0,
 	0.4,
 	// MOUSE FUNCTIONS
@@ -307,6 +307,11 @@ void drawNormal(float x, float y, float z,
   }
 }
 
+void resetCamera() {
+	c.offsetX = 0.0;
+	c.offsetY = 0.0;
+}
+
 void respawn() {
 	frog.currentCoord.x = 8.5;
 	frog.currentCoord.y = 0;
@@ -318,6 +323,7 @@ void respawn() {
 	frog.currentAngle = frog.polar.angle;
 	frog.polar.rotation = 180;
 	frog.dead = false;
+	resetCamera();
 }
 
 float carCollision(float frogX, float frogY, float frogZ) {
@@ -1034,8 +1040,7 @@ void mouse(int button, int state, int x, int y){
 		if (button == GLUT_RIGHT_BUTTON) {
 			c.RMB = true;
 			if (glutGetModifiers() == GLUT_ACTIVE_CTRL) {
-				c.offsetX = 0.0;
-				c.offsetY = 0.0;
+				resetCamera();
 			}
 		}
 	}
@@ -1119,7 +1124,7 @@ void display(){
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
   gluPerspective(75, c.aspectRatio, 0.01, 100);
-  glTranslatef(0, 0, c.zoom + c.offsetZ);
+  glTranslatef(0, 0, c.zoom);
   glRotatef(c.rotationY*c.sensitivity, 1.0, 0, 0);
   glRotatef(c.rotationX*c.sensitivity, 0, 1.0, 0);
   glTranslatef(c.offsetX, c.offsetY, 0);
@@ -1190,9 +1195,11 @@ void reshape(int width, int height) {
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	gluPerspective(75, c.aspectRatio, 0.01, 100);
-	glTranslatef(0, 0, c.zoom - 3.0);
-	glRotatef(c.rotationX, 0, 1.0, 0);
-	glRotatef(c.rotationY, 1.0, 0, 0);
+	glTranslatef(0, 0, c.zoom);
+	glRotatef(c.rotationY*c.sensitivity, 1.0, 0, 0);
+	glRotatef(c.rotationX*c.sensitivity, 0, 1.0, 0);
+	glTranslatef(c.offsetX, c.offsetY, 0);
+	glTranslatef(-frog.currentCoord.x, -frog.currentCoord.y, -frog.currentCoord.z);
 	glMatrixMode(GL_MODELVIEW);
 
 }
@@ -1264,6 +1271,7 @@ void keyboard(unsigned char key, int x, int y){
 		  frog.logOffset = 0.0;
 		  frog.onLog = false;
 		  frog.jumping = true;
+		  resetCamera();
 	  }
 	  break;
   case 'g':
