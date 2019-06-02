@@ -1614,7 +1614,7 @@ void keyboard(unsigned char key, int x, int y){
   case 'r':
 	  respawn();
 	  break;
-  case 'm':
+  case 'f':
     global.filled = !global.filled;
     break;
   case 'n':
