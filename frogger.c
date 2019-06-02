@@ -30,8 +30,8 @@
 #define CAR_LANE_2 4.5
 #define CAR_LANE_3 5.5
 #define CAR_LANE_4 6.5
-#define LOG_LANE_1 -2
-#define LOG_LANE_2 -4
+#define LOG_LANE_1 -1.5
+#define LOG_LANE_2 -3.5
 #define LOG_RADIUS 0.25
 #define LOG_LENGTH 2
 
@@ -74,7 +74,8 @@ typedef struct {
   vec3fPolar polar;
   bool jumping;
   bool onLog;
-  float logOffset;
+  float offsetY;
+  float offsetZ;
   float currentAngle;
   bool dead;
   float deadTime;
@@ -86,6 +87,7 @@ Frog frog = {
   {1.25, 45, 180},
   false,
   false,
+  0.0,
   0.0,
   45.0,
   false,
@@ -152,6 +154,7 @@ typedef struct {
   bool axes;
   bool normals;
   bool go;
+  bool OSD;
   // VARIABLES
   float time;
   int tess;
@@ -168,7 +171,7 @@ typedef struct {
 
 global_val global = {
 	// RENDER FUNCTIONS
-	false, false, true, true, false,
+	false, false, true, true, false, false,
 	// VARIABLES
 	0.0,
 	8,
@@ -209,6 +212,63 @@ Camera c = {
 };
 
 // +++++++++++++++++++++++++++ DRAW FUNCTION ++++++++++++++++++++++++++++++
+
+void displayOSD()
+{
+	char buffer[30];
+	char *bufp;
+	int w, h;
+
+	glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_LIGHTING);
+
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+
+	/* Set up orthographic coordinate system to match the
+	   window, i.e. (0,0)-(w,h) */
+	w = glutGet(GLUT_WINDOW_WIDTH);
+	h = glutGet(GLUT_WINDOW_HEIGHT);
+	glOrtho(0.0, w, 0.0, h, -1.0, 1.0);
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+
+	/* Frame rate */
+	glColor3f(1.0, 1.0, 0.0);
+	glRasterPos2i(w - 150, h - 20);
+	snprintf(buffer, sizeof buffer, "fr (f/s): %6.0f", global.frameRate);
+	for (bufp = buffer; *bufp; bufp++)
+		glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *bufp);
+
+	/* Time per frame */
+	glColor3f(1.0, 1.0, 0.0);
+	glRasterPos2i(w - 150, h - 40);
+	snprintf(buffer, sizeof buffer, "ft (ms/f): %5.0f", 1.0 / global.frameRate * 1000.0);
+	for (bufp = buffer; *bufp; bufp++)
+		glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *bufp);
+
+	/* Tesellation */
+	glColor3f(1.0, 1.0, 0.0);
+	glRasterPos2i(w - 150, h - 60);
+	snprintf(buffer, sizeof buffer, "tess: %d", global.tess);
+	for (bufp = buffer; *bufp; bufp++)
+		glutBitmapCharacter(GLUT_BITMAP_9_BY_15, *bufp);
+
+	/* Pop modelview */
+	glPopMatrix();
+	glMatrixMode(GL_PROJECTION);
+
+	/* Pop projection */
+	glPopMatrix();
+	glMatrixMode(GL_MODELVIEW);
+
+	/* Pop attributes */
+	glPopAttrib();
+}
 
 void drawAxes(float length){
   if (global.axes){
@@ -313,9 +373,9 @@ void resetCamera() {
 }
 
 void respawn() {
-	frog.currentCoord.x = 8.5;
-	frog.currentCoord.y = 0;
-	frog.currentCoord.z = 0;
+	frog.currentCoord.x = INITIAL_COORD_X;
+	frog.currentCoord.y = INITIAL_COORD_Y;
+	frog.currentCoord.z = INITIAL_COORD_Z;
 	frog.polar.angle = 45;
 	frog.polar.speed = 1.25;
 	frog.onLog = false;
@@ -324,6 +384,85 @@ void respawn() {
 	frog.polar.rotation = 180;
 	frog.dead = false;
 	resetCamera();
+}
+
+float getRiverHeight(float x) {
+	float ix = water.coord.x;
+	float iy = water.coord.y;
+
+	float ampere = water.wave.A;
+	float k = water.wave.k;
+
+	float y = ampere * sin(k*(x - ix) + global.time) + iy;
+
+	return y;
+}
+
+vec3f determineLog(float frogX, float frogY, float frogZ) {
+
+	for (int i = 0; i < sizeof(logs) / sizeof(log_val); i++) {
+		if (frogX < logs[i].coord.x + logs[i].radius && frogX > logs[i].coord.x - logs[i].radius) {
+			float minZ = logs[i].coord.z - logs[i].length / 2;
+			float maxZ = logs[i].coord.z + logs[i].length / 2;
+			if (frogZ >= minZ && frogZ <= maxZ) {
+				//printf("LOG TOUCHED at time %f, LOG NUM : %d\n", global.time, i);
+				return logs[i].coord;
+			}
+				
+		}
+	}
+
+	vec3f error = { -1, -1 , -1 };
+
+	return error;
+}
+
+float logCollision(float frogX, float frogY, float frogZ) {
+
+	/*	-1.0 : No collision
+	-2.0 : Collision (Death)
+	-3.0 : Collision with river (Start death animation)
+	Any other float : Collision (Return height for adjusting position)
+	*Enum is not used as float value is needed
+	*/
+	float value = -1.0;
+	float frogR = 0.2;
+	float logR = logs[0].radius;
+	vec3f log = determineLog(frogX, frogY, frogZ);
+
+	float sumOfRadius = frogR + logR;
+	float x1 = log.x - frogX;
+	float y1 = log.y - frogY;
+	float z1 = log.z - frogZ;
+	float frogLogDistance = x1 * x1 + y1 * y1;
+	frogLogDistance = sqrtf(frogLogDistance);
+
+	if (frogLogDistance < sumOfRadius * (logR / (logR + frogR))) {
+		return log.y + logR;
+	}
+
+	return value;
+}
+
+float riverCollision(float frogX, float frogY, float frogZ) {
+
+	/*	-1.0 : No collision
+	-2.0 : Collision (Death)
+	-3.0 : Collision with river (Start death animation)
+	Any other float : Collision (Return height for adjusting position)
+	*Enum is not used as float value is needed
+	*/
+	float value = -1.0;
+
+	if (determineLog(frogX, frogY, frogZ).x != -1)
+		value = logCollision(frogX, frogY, frogZ);
+
+	float y = getRiverHeight(frogX);
+
+	if (frogY <= y)
+		value = -2.0; // TODO
+
+	return value;
 }
 
 float carCollision(float frogX, float frogY, float frogZ) {
@@ -380,17 +519,22 @@ float groundCollision(float frogX, float frogY, float frogZ) {
 		*Enum is not used as float value is needed
 	*/
 	float value = -1.0;
+	float frogR = 0.10;
 
 	if (frogY <= 0) {
 		value = fabsf(frogY);
 	}
 
 	if (frogX < 10.0 && frogX >= 7.0 && frogY <= 0) {
-		value = fabsf(frogY);
+		value = frogR;
 	}else if (frogX < 7.0 && frogX >= 3.0) {
 		value = carCollision(frogX, frogY, frogZ);
 	}else if (frogX < 3.0 && frogX >= 0.0 && frogY <= 0) {
-		value = fabsf(frogY);;
+		value = frogR;
+	}else if (frogX < 0.0 && frogX >= -5) {
+		value = riverCollision(frogX, frogY, frogZ);
+	}else if (frogX < -5 && frogX >= -7.5 && frogY <= 0) {
+		value = frogR;
 	}
 
 	/*
@@ -647,7 +791,7 @@ void drawGrid(land_v grid){
   glPopMatrix();
 }
 
-void drawSin(water_val water) {
+void drawRiver(water_val water) {
 
   float ix = water.coord.x;
   float iy = water.coord.y;
@@ -880,16 +1024,19 @@ void drawCyl(log_val *log){
 	  float speed = 0;
 
 	  if (log->coord.x == LOG_LANE_1) {
-		  speed = 0.023;
+		  speed = 0.0125;
 	  }
 	  else {
-		  speed = -0.017;
+		  speed = -0.009;
 	  }
 
 	  log->coord.z += speed;
 	  if (log->coord.z >= 9 || log->coord.z <= -9) {
 		  log->coord.z *= -1;
 	  }
+
+	  log->coord.y = getRiverHeight(log->coord.x + 0.1) + 0.1;
+
   }
 
   glPushMatrix();
@@ -908,7 +1055,7 @@ void drawCyl(log_val *log){
       float yy = radius * sinf((i+1)*(pi2/slices));
 
 
-      GLfloat color[] = { 0.09, 0.41, 0.59 }; // MATERIAL RGBA BROWN
+      GLfloat color[] = { 188 / 255.0, 149 / 255.0, 18 / 255.0 }; // MATERIAL RGBA BROWN
       GLfloat shiny[] = { 128 }; // SHINY!
       glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, color);
       glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, color);
@@ -916,7 +1063,7 @@ void drawCyl(log_val *log){
       glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shiny);
 
       glBegin(GL_TRIANGLES);
-      glColor3f(0.09, 0.41, 0.59);
+      glColor3f(188 / 255.0, 149 / 255.0, 18 / 255.0);
         glNormal3f(0,0,halfLength);
         glVertex3f(0,0,halfLength);
         glNormal3f(x,y,halfLength);
@@ -984,6 +1131,23 @@ void idle(){
 
 		if (groundCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z) != -1.0) {
 
+			if (determineLog(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z).x != -1) {
+
+				float frogR = 0.1;
+				vec3f log = determineLog(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z);
+
+				/* Store the X and Y distance between frog and log when colliding */
+				frog.offsetY = frog.currentCoord.y - log.y + frogR;
+				if (frog.offsetY <= 0.03)
+					frog.offsetY = 0.03;
+
+				frog.offsetZ = frog.currentCoord.z - log.z;
+
+				frog.onLog = true;
+			}
+			else
+				frog.onLog = false;
+
 			adjustPosition(groundCollision(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z));
 
 			if(!frog.dead)
@@ -1007,6 +1171,26 @@ void idle(){
 		else if (frog.currentCoord.x < -8.0) {
 			frog.currentCoord.x = -8.0;
 		}
+	}
+
+	if (frog.onLog) {
+		vec3f log = determineLog(frog.currentCoord.x, frog.currentCoord.y, frog.currentCoord.z);
+
+		if (log.x != -1 && log.y != -1 && log.z != -1) {
+			frog.currentCoord.y = log.y + frog.offsetY;
+			frog.currentCoord.z = log.z + frog.offsetZ;
+		}
+		else {
+			frog.projectile.v.x = 0.0;
+			frog.projectile.v.y = 0.1;
+			frog.projectile.v.z = -0.1;
+			frog.offsetY = 0.0;
+			frog.offsetZ = 0.0;
+			frog.onLog = false;
+			frog.jumping = true;
+			resetCamera();
+		}
+		
 	}
 
 
@@ -1163,7 +1347,7 @@ void display(){
   glPopMatrix();
 
   // WATER
-  drawSin(water);
+  drawRiver(water);
 
   // FROG
   glPushMatrix();
@@ -1177,12 +1361,18 @@ void display(){
   // LOGS
   drawLogs();
 
+  /* Display OSD */
+  if (global.OSD)
+	  displayOSD();
+
   /* Always check for errors! */
   int err;
   while ((err = glGetError()) != GL_NO_ERROR)
     printf("display: %s\n", gluErrorString(err));
 
   glutSwapBuffers();
+
+  global.frames++;
 }
 
 void reshape(int width, int height) {
@@ -1268,17 +1458,24 @@ void keyboard(unsigned char key, int x, int y){
 		  frog.projectile.v.x = frog.polar.speed * cos(angle) * cos(rotation);
 		  frog.projectile.v.y = frog.polar.speed * sin(angle);
 		  frog.projectile.v.z = -frog.polar.speed * cos(angle) * sin(rotation);
-		  frog.logOffset = 0.0;
+		  frog.offsetY = 0.0;
+		  frog.offsetZ = 0.0;
 		  frog.onLog = false;
 		  frog.jumping = true;
 		  resetCamera();
 	  }
+	  break;
+  case 'o':
+	  global.OSD = !global.OSD;
 	  break;
   case 'g':
 	  if (!global.paused)
 		  global.paused = true;
 	  else
 		  global.paused = false;
+	  break;
+  case 'r':
+	  respawn();
 	  break;
   case 'm':
     global.filled = !global.filled;
